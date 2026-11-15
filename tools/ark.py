@@ -95,6 +95,12 @@ def patch(usrdir,outdir,replacements,part_name=None):
     open(os.path.join(outdir,'main_ps3.hdr'),'wb').write(encrypt_hdr(build(d),key))
     return part_name,len(blob)
 if __name__=='__main__':
+    if sys.argv[1:2]==['extract']:   # python3 tools/ark.py extract USRDIR OUTDIR: unpack every file in the archive
+        _,d=load(sys.argv[2]); out=sys.argv[3]
+        for f in d['files']:
+            if '..' in f['name'].split('/'): continue
+            p=os.path.join(out,f['name']); os.makedirs(os.path.dirname(p),exist_ok=True); open(p,'wb').write(read_file(sys.argv[2],d,f))
+        print('extracted',len(d['files']),'files to',out); sys.exit()
     enc=open(sys.argv[1],'rb').read(); key,h=decrypt_hdr(enc); d=parse(h)
     print('parts',d['part_count'],'files',len(d['files']),'buckets',len(d['buckets']))
     print('round trip exact:',encrypt_hdr(build(d),key)==enc)

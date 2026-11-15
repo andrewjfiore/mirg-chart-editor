@@ -324,7 +324,7 @@ async function newSong() {
     bpm.hidden = bpmLabel.hidden = auto.checked;
     if (auto.checked) note.textContent = 'This computer finds the beat, splits the instruments and charts every track. Takes about 1 to 3 minutes.';
     else if (helper) note.textContent = 'You get six empty tracks to fill in with clicks.';
-    else { note.textContent = 'You get six empty tracks to fill in with clicks. To have gems placed automatically, '; const l = document.createElement('a'); l.href = REPO + '#download'; l.target = '_blank'; l.rel = 'noopener'; l.textContent = 'download the app'; note.append(l, '.'); }
+    else { note.textContent = 'You get six empty tracks to fill in with clicks. To have gems placed automatically, '; const l = document.createElement('a'); l.href = REPO + '#install-adds-auto-charting'; l.target = '_blank'; l.rel = 'noopener'; l.textContent = 'download the app'; note.append(l, '.'); }
   };
   auto.addEventListener('change', sync); sync();
   fileIn.addEventListener('change', () => { const f = fileIn.files[0]; if (f && !title.value.trim()) title.value = f.name.replace(/\.[^.]+$/, ''); });
