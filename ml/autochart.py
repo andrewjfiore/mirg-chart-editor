@@ -14,7 +14,7 @@ _model=None
 def model():
     global _model
     if _model is None:
-        dev='mps' if torch.backends.mps.is_available() else 'cpu'
+        dev='cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
         m=Charter().to(dev); m.load_state_dict(torch.load(os.path.join(ROOT,'ml','charter.pt'),map_location=dev)); m.eval(); _model=(m,dev)
     return _model
 def thresholds(kind='trained'):
@@ -62,16 +62,8 @@ def tile_track(src_rest,length_ticks,period):
             if r[0]<period and t<length_ticks: out.append([t]+r[1:4])
         rep+=1
     return out
-def run(upload_path,slot,title,artist,progress=lambda stage,frac=None:None,kind='trained',donor=None):
-    """slot: song id the files go to. A slot that is not a shipped song is a new song: `donor` (a shipped song id,
-    or the one saved with the slot's earlier run) supplies the world and click tracks, arena and score goals."""
-    new=not os.path.isdir(os.path.join(SONGS,slot))
-    if new:
-        upj=os.path.join(EDITS,slot,'upload.json')
-        donor=donor or (json.load(open(upj)).get('donor') if os.path.exists(upj) else None)
-        if not donor or not os.path.isdir(os.path.join(SONGS,donor)): raise ValueError('a new song needs a shipped donor song')
-    else: donor=slot
-    os.makedirs(EDITS,exist_ok=True); job=os.path.join(UPLOADS,slot); os.makedirs(job,exist_ok=True)
+def chart_tracks(upload_path,job,progress,kind):
+    """Beat grid, Demucs stems and one model chart per stem, written under `job`. Shared by run() and web_chart()."""
     progress('Loading audio',0.02); mix=load_audio(upload_path)
     progress('Finding the beat',0.06); bt=beats.track(mix,SR); lead=int(round(bt['lead_sec']*SR))
     mix=np.concatenate([np.zeros((lead,2),np.float32),mix]); per=bt['period']; tempos=[[0,int(round(per*1e6))]]
@@ -97,6 +89,26 @@ def run(upload_path,slot,title,artist,progress=lambda stage,frac=None:None,kind=
         gems=[[s*F.STEP_TICKS,d,l,F.STEP_TICKS*3 if F.STEP_TICKS*3<=120 else 120,96] for s,d,l in gems if s>=first_step+F.STEPS_PER_BEAT*4]
         tracks.append({'index':i+1,'name':'T%d CATCH:%s:%s'%(i+1,letter,label),'kind':'catch','label':label,'gems':sorted(gems),
                        'gem_meta':[[0,0x80,0x40,None,None]]*len(gems),'rest':[[0,'meta',3,('T%d CATCH:%s:%s'%(i+1,letter,label)).encode().hex()]],'eot':total_ticks})
+    return mix,stems,n,per,tempos,bt,rms,loud,total_ticks,tracks
+def web_chart(upload_path,job,title,artist,progress=lambda stage,frac=None:None,kind='trained'):
+    """Audio file -> chart for the web editor, no game files needed. The beat-aligned audio goes to job/audio.flac."""
+    os.makedirs(job,exist_ok=True)
+    mix,stems,n,per,tempos,bt,rms,loud,total_ticks,tracks=chart_tracks(upload_path,job,progress,kind)
+    progress('Writing audio',0.9); sf.write(os.path.join(job,'audio.flac'),np.clip(mix,-1,1),SR,format='FLAC',subtype='PCM_16')
+    return {'meta':{'title':title,'artist':artist,'bpm':round(60/per,1),'section_start_bars':[],'song_info':[],'enable_order':[1,2,3,4,5,6]},
+            'tpq':F.TPQ,'tempos':tempos,'timesig':[[0,4,4]],'world':[],'length_ticks':total_ticks,
+            'tracks':[{k:t[k] for k in ('index','name','kind','label','gems')} for t in tracks]}
+def run(upload_path,slot,title,artist,progress=lambda stage,frac=None:None,kind='trained',donor=None):
+    """slot: song id the files go to. A slot that is not a shipped song is a new song: `donor` (a shipped song id,
+    or the one saved with the slot's earlier run) supplies the world and click tracks, arena and score goals."""
+    new=not os.path.isdir(os.path.join(SONGS,slot))
+    if new:
+        upj=os.path.join(EDITS,slot,'upload.json')
+        donor=donor or (json.load(open(upj)).get('donor') if os.path.exists(upj) else None)
+        if not donor or not os.path.isdir(os.path.join(SONGS,donor)): raise ValueError('a new song needs a shipped donor song')
+    else: donor=slot
+    os.makedirs(EDITS,exist_ok=True); job=os.path.join(UPLOADS,slot); os.makedirs(job,exist_ok=True)
+    mix,stems,n,per,tempos,bt,rms,loud,total_ticks,tracks=chart_tracks(upload_path,job,progress,kind)
     progress('Writing song files',0.88)
     slot_chart=chart.load(os.path.join(SONGS,donor,donor+'.mid')); side={t['kind']:t for t in slot_chart['tracks'] if t['kind'] in('click','world')}
     slot_len=max(t['eot'] for t in slot_chart['tracks']); period=max(TPB,(slot_len//TPB)*TPB)

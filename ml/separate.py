@@ -7,7 +7,7 @@ def separate(path,outdir,model_name='htdemucs_6s',progress=None):
     if all(os.path.exists(p) for p in done):
         return {s:p for s,p in zip(STEMS,done)}
     import demucs.api
-    dev='mps' if torch.backends.mps.is_available() else 'cpu'
+    dev='cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     sep=demucs.api.Separator(model=model_name,device=dev,progress=False,
         callback=(lambda d: progress and progress(d.get('segment_offset',0)/max(1,d.get('audio_length',1)))) )
     origin,res=sep.separate_audio_file(path)

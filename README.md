@@ -5,6 +5,17 @@ so the game can load them. Try it in the browser with an original demo song: htt
 
 This project is not affiliated with the game's developer or publisher, and it contains no game files: bring your own copy.
 
+## Download
+For auto-charting (gems placed for you from any audio file), run the app on your computer:
+
+1. Download the zip: https://github.com/andrewjfiore/mirg-chart-editor/archive/refs/heads/main.zip and unzip it.
+2. Double-click `Start MiRG (Mac).command` or `Start MiRG (Windows).bat`. On a Mac, the first time, right-click it and pick Open.
+3. Your browser opens the editor. Click New song, pick an audio file, and leave "Place gems automatically" ticked.
+
+The first start downloads Python, the packages and the charting models (about 2 GB); later starts take a few seconds.
+Charting a song takes about 1 to 3 minutes on an Apple silicon Mac, which runs it on the GPU; on Windows it uses an NVIDIA graphics card when there is one, and the CPU (slower) when not. Without your own game files the app
+runs the web version; with them it also builds game files (below).
+
 ## Run
     python3 server.py 8651      # then open http://localhost:8651/
 

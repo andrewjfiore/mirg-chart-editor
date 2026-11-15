@@ -5,6 +5,8 @@ ROOT=os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0,os.path.join(
 import chart,midps3,dtb,mogg,ark,songcfg,unicodedata
 WORK=os.path.join(ROOT,'work'); SONGS=os.path.join(WORK,'ark','ps3','songs'); USRDIR=os.path.join(WORK,'pkg','USRDIR')
 EDITS=os.path.join(WORK,'edits'); BUILD=os.path.join(WORK,'build','USRDIR'); EDITOR=os.path.join(ROOT,'editor')
+# without your own game files the app serves the web version, plus auto-charting on this computer
+HAVE_GAME=os.path.exists(os.path.join(USRDIR,'main_ps3.hdr'))
 SKIP={'tut0','tut1','tutc'}
 DEFAULT_DONOR='donot'   # shipped extra whose world and click tracks, arena and score goals a new song borrows
 NEW_FILES=('.mid','.mid_ps3','.mogg','.moggsong','.moggsong_dta_ps3','.png_ps3','.png.dta_dta_ps3')
@@ -192,6 +194,25 @@ def start_upload(slot,title,artist,filename,data,kind='trained',mode='replace',n
             JOBS[jid]['error']=repr(e); JOBS[jid]['trace']=traceback.format_exc()[-2000:]
         JOBS[jid]['done']=True
     threading.Thread(target=work,daemon=True).start(); return JOBS[jid]
+def start_web_chart(title,artist,filename,data,kind='trained'):
+    """Auto-chart an audio file for the web editor (no game files needed). Poll /ml/job/<id>; audio at /ml/audio/<id>."""
+    if kind not in('trained','weightspace'): raise ValueError('model must be trained or weightspace')
+    ext=os.path.splitext(filename)[1].lower()
+    if ext not in('.wav','.flac','.mp3','.ogg','.aiff','.aif'): raise ValueError('use WAV, FLAC, MP3, OGG or AIFF')
+    jid=uuid.uuid4().hex[:8]; job=os.path.join(WORK,'webcharts',jid); os.makedirs(job,exist_ok=True)
+    src=os.path.join(job,'source'+ext); open(src,'wb').write(data)
+    JOBS[jid]={'id':jid,'stage':'Queued','progress':0.0,'done':False,'error':None,'started':time.time()}
+    def work():
+        try:
+            sys.path.insert(0,os.path.join(ROOT,'ml')); import autochart
+            def prog(stage,frac=None):
+                JOBS[jid]['stage']=stage
+                if frac is not None: JOBS[jid]['progress']=round(float(frac),3)
+            JOBS[jid]['result']=autochart.web_chart(src,job,title.strip() or 'New song',artist.strip(),progress=prog,kind=kind)
+        except Exception as e:
+            JOBS[jid]['error']=repr(e); JOBS[jid]['trace']=traceback.format_exc()[-2000:]
+        JOBS[jid]['done']=True
+    threading.Thread(target=work,daemon=True).start(); return JOBS[jid]
 import threading as _th
 _PLAY_LOCK=_th.Lock()
 def play_mix(sid):
@@ -252,6 +273,17 @@ class H(BaseHTTPRequestHandler):
             if p.startswith('/api/play_info/'): return self._send(200,json.load(open(play_mix(self._sid(p))[1])))
             if p.startswith('/api/job/'):
                 j=JOBS.get(p.split('/')[-1]); return self._send(200 if j else 404,j or {'error':'unknown job'})
+            if p=='/ml/ping': return self._send(200,{'ok':True,'model':os.path.exists(os.path.join(ROOT,'ml','charter.pt'))})
+            if p.startswith('/ml/job/'):
+                j=JOBS.get(p.split('/')[-1]); return self._send(200 if j else 404,j or {'error':'unknown job'})
+            if p.startswith('/ml/audio/'):
+                jid=p.split('/')[-1]
+                if not re.fullmatch(r'[0-9a-f]{8}',jid) or not os.path.exists(os.path.join(WORK,'webcharts',jid,'audio.flac')): return self._send(404,{'error':'no audio for this job'})
+                return self._send(200,open(os.path.join(WORK,'webcharts',jid,'audio.flac'),'rb').read(),'audio/flac')
+            if not HAVE_GAME and p in('/','/index.html','/play.html','/static-api.js'):
+                import build_pages
+                if p=='/static-api.js': return self._send(200,open(os.path.join(ROOT,'pages','static-api.js'),'rb').read(),'text/javascript; charset=utf-8')
+                return self._send(200,build_pages.page('play.html' if p=='/play.html' else 'index.html').encode(),'text/html; charset=utf-8')
             f=os.path.normpath(os.path.join(EDITOR,(p.lstrip('/') or 'index.html')))
             if f.startswith(EDITOR) and os.path.isfile(f):
                 ct={'html':'text/html','js':'text/javascript','css':'text/css'}.get(f.rsplit('.',1)[-1],'application/octet-stream')
@@ -265,6 +297,10 @@ class H(BaseHTTPRequestHandler):
         p=self.path.split('?')[0]
         try:
             n=int(self.headers.get('Content-Length') or 0)
+            if p=='/ml/chart':
+                from urllib.parse import urlparse,parse_qs
+                q={k:v[0] for k,v in parse_qs(urlparse(self.path).query).items()}
+                return self._send(200,start_web_chart(q.get('title',''),q.get('artist',''),q.get('name','upload.wav'),self.rfile.read(n),q.get('model','trained')))
             if p=='/api/upload':
                 from urllib.parse import urlparse,parse_qs
                 q={k:v[0] for k,v in parse_qs(urlparse(self.path).query).items()}; mode=q.get('mode','replace')
@@ -278,4 +314,4 @@ class H(BaseHTTPRequestHandler):
         except Exception as e: self._send(500,{'error':repr(e)})
 if __name__=='__main__':
     port=int(sys.argv[1]) if len(sys.argv)>1 else 8651
-    print('MiRG Chart Editor on http://localhost:%d/'%port); ThreadingHTTPServer(('127.0.0.1',port),H).serve_forever()
+    print('MiRG Chart Editor on http://localhost:%d/'%port+('' if HAVE_GAME else '  (no game files found: web version with auto-charting)')); ThreadingHTTPServer(('127.0.0.1',port),H).serve_forever()

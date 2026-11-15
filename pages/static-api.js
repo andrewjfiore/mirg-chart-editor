@@ -275,51 +275,87 @@ function editorUi() {
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   });
   if (!get('tipClosed', false)) {
-    const m = /^([^.]+)\.github\.io$/.exec(location.hostname), repo = location.pathname.split('/').filter(Boolean)[0];
-    const tip = document.createElement('div'); tip.id = 'staticTip'; tip.setAttribute('role', 'status');
-    tip.innerHTML = '<b>Web version</b>Edit the demo song, start a New song over your own audio, or open a chart file. To chart from audio automatically, edit your own copy of the game and build game files, run the local app'
-      + (m && repo ? ' from <a target="_blank" rel="noopener" href="https://github.com/' + m[1] + '/' + repo + '">the repository</a>.' : '.')
-      + '<button type="button" aria-label="Close">x</button>';
-    tip.querySelector('button').addEventListener('click', () => { tip.remove(); put('tipClosed', true); });
-    document.body.appendChild(tip);
+    mlCheck().then((helper) => {
+      const tip = document.createElement('div'); tip.id = 'staticTip'; tip.setAttribute('role', 'status');
+      tip.innerHTML = helper
+        ? '<b>Auto-charting is on</b>Click New song and pick an audio file: this computer splits the instruments and places the gems.'
+        : '<b>Web version</b>Edit the demo song, start a New song over your own audio, or open a chart file. To have gems placed for you automatically, '
+          + '<a target="_blank" rel="noopener" href="' + REPO + '#download">download the app</a>.';
+      tip.insertAdjacentHTML('beforeend', '<button type="button" aria-label="Close">x</button>');
+      tip.querySelector('button').addEventListener('click', () => { tip.remove(); put('tipClosed', true); });
+      document.body.appendChild(tip);
+    });
   }
 }
 /* ---------- New song: a blank chart over the visitor's own audio file ---------- */
 const NEW_TRACKS = [['T1 CATCH:D:Drums', 'Drums'], ['T2 CATCH:B:Bass', 'Bass'], ['T3 CATCH:S:Synth', 'Synth'], ['T4 CATCH:G:Guitar', 'Guitar'], ['T5 CATCH:V:Vocals', 'Vocals'], ['T6 CATCH:S:Synth 2', 'Synth 2']];
+const REPO = 'https://github.com/andrewjfiore/mirg-chart-editor';
+// the downloaded app answers /ml/ping; the hosted web version does not
+let mlP = null;
+const mlCheck = () => mlP || (mlP = fetch('/ml/ping', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => (j && j.ok && j.model ? j : null)).catch(() => null));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function autoChart(f, t, a) {
+  const q = new URLSearchParams({ title: t, artist: a, name: f.name });
+  let j = await (await fetch('/ml/chart?' + q, { method: 'POST', body: f })).json();
+  while (!j.error && !j.done) {
+    msg(j.stage + ' ' + Math.round((j.progress || 0) * 100) + '%', 'busy');
+    await sleep(1000);
+    j = await (await fetch('/ml/job/' + j.id, { cache: 'no-store' })).json();
+  }
+  if (j.error) throw new Error(String(j.error).replace(/^\w+\(['"]?|['"]?\)$/g, ''));
+  return { song: j.result, audio: await (await fetch('/ml/audio/' + j.id)).blob() };
+}
 async function newSong() {
+  const helper = await mlCheck();
   const form = document.createElement('div'); form.className = 'upGrid';
   const row = (label, input) => { const l = document.createElement('label'); l.textContent = label; form.append(l, input); return input; };
   const inp = (type, attrs) => Object.assign(document.createElement('input'), { type }, attrs);
-  const fileIn = row('Audio', inp('file', { accept: 'audio/*,.wav,.mp3,.ogg,.flac,.m4a' }));
+  const fileIn = row('Audio', inp('file', { accept: 'audio/*,.wav,.mp3,.ogg,.flac,.aif,.aiff' }));
   const title = row('Title', inp('text', { placeholder: 'Required' }));
   const artist = row('Artist', inp('text'));
   const bpm = row('BPM', inp('number', { min: 40, max: 300, step: 1, value: 120 }));
+  const bpmLabel = bpm.previousSibling;
+  const auto = inp('checkbox', { checked: !!helper, disabled: !helper });
+  const autoLbl = document.createElement('label'); autoLbl.className = 'chk'; autoLbl.append(auto, ' Place gems automatically');
+  row('Gems', autoLbl);
   const note = document.createElement('div'); note.className = 'upNote';
-  note.textContent = 'You get six empty tracks to fill in with clicks. Charting from audio needs the local app.';
   const body = document.createElement('div'); body.append(form, note);
+  const sync = () => {
+    bpm.hidden = bpmLabel.hidden = auto.checked;
+    if (auto.checked) note.textContent = 'This computer finds the beat, splits the instruments and charts every track. Takes about 1 to 3 minutes.';
+    else if (helper) note.textContent = 'You get six empty tracks to fill in with clicks.';
+    else { note.textContent = 'You get six empty tracks to fill in with clicks. To have gems placed automatically, '; const l = document.createElement('a'); l.href = REPO + '#download'; l.target = '_blank'; l.rel = 'noopener'; l.textContent = 'download the app'; note.append(l, '.'); }
+  };
+  auto.addEventListener('change', sync); sync();
   fileIn.addEventListener('change', () => { const f = fileIn.files[0]; if (f && !title.value.trim()) title.value = f.name.replace(/\.[^.]+$/, ''); });
   const r = await ask({ title: 'New song', body, buttons: [{ label: 'Create', value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel', cancel: true }] });
   if (r !== 'ok') return;
-  const f = fileIn.files[0], t = title.value.trim(), b = Math.round(+bpm.value);
+  const f = fileIn.files[0], t = title.value.trim(), b = Math.round(+bpm.value), a = artist.value.trim();
   if (!f) return msg('Choose an audio file to make a new song.', 'err');
   if (!t) return msg('Give the new song a title.', 'err');
-  if (!(b >= 40 && b <= 300)) return msg('BPM has to be between 40 and 300.', 'err');
-  msg('Reading ' + f.name + '...', 'busy');
+  if (!auto.checked && !(b >= 40 && b <= 300)) return msg('BPM has to be between 40 and 300.', 'err');
+  const btn = [...document.querySelectorAll('#bar1 button')].find((x) => x.textContent === 'New song');
+  if (btn) btn.disabled = true;
   try {
-    const ab = await f.arrayBuffer();
-    const dur = (await new OfflineAudioContext(1, 1, 44100).decodeAudioData(ab.slice(0))).duration;
-    const bars = Math.ceil(dur * b / 60 / 4) + 1, id = 'new_' + Date.now().toString(36);
-    const song = {
-      meta: { title: t, artist: artist.value.trim(), bpm: b, section_start_bars: [], song_info: [], enable_order: [1, 2, 3, 4, 5, 6] },
-      tpq: TPQ, tempos: [[0, Math.round(60e6 / b)]], timesig: [[0, 4, 4]], world: [], length_ticks: bars * BAR,
-      tracks: NEW_TRACKS.map(([name, label], i) => ({ index: i + 1, name, kind: 'catch', label, gems: [] })),
-    };
-    await fileSet('audio.' + id, f);
+    let song, audio = f;
+    if (auto.checked) ({ song, audio } = await autoChart(f, t, a));
+    else {
+      msg('Reading ' + f.name + '...', 'busy');
+      const dur = (await new OfflineAudioContext(1, 1, 44100).decodeAudioData(await f.arrayBuffer())).duration;
+      song = {
+        meta: { title: t, artist: a, bpm: b, section_start_bars: [], song_info: [], enable_order: [1, 2, 3, 4, 5, 6] },
+        tpq: TPQ, tempos: [[0, Math.round(60e6 / b)]], timesig: [[0, 4, 4]], world: [], length_ticks: (Math.ceil(dur * b / 60 / 4) + 1) * BAR,
+        tracks: NEW_TRACKS.map(([name, label], i) => ({ index: i + 1, name, kind: 'catch', label, gems: [] })),
+      };
+    }
+    const id = 'new_' + Date.now().toString(36);
+    await fileSet('audio.' + id, audio);
     if (!put('song.' + id, song)) throw new Error('Browser storage is full or blocked.');
-    put('opened', opened().concat([{ id, title: t, artist: song.meta.artist, bpm: b }]));
+    put('opened', opened().concat([{ id, title: t, artist: a, bpm: song.meta.bpm }]));
     await refreshSongs(); await switchSong(id);
-    msg('Created ' + t + '. Click in a lane to add gems, then Save.', 'ok');
+    msg(auto.checked ? 'Charted ' + t + '. Edit any gem, then Save.' : 'Created ' + t + '. Click in a lane to add gems, then Save.', 'ok');
   } catch (e) { msg('Could not make the song from ' + f.name + ': ' + (e && e.message ? e.message : 'the browser cannot read this audio file'), 'err'); }
+  finally { if (btn) btn.disabled = false; }
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', editorUi); else editorUi();
 window.__ampStatic = { demoSong, demoWav };

@@ -6,7 +6,7 @@ def _model():
     global _A
     if _A is None:
         from beat_this.inference import Audio2Beats
-        _A=Audio2Beats(checkpoint_path='final0',device='mps' if torch.backends.mps.is_available() else 'cpu',dbn=False)
+        _A=Audio2Beats(checkpoint_path='final0',device='cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu',dbn=False)
     return _A
 def track(mix,sr,beats_per_bar=4,min_lead_beats=8):
     y=mix.mean(1) if mix.ndim==2 else mix
