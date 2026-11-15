@@ -1,0 +1,1 @@
+{"version":"0.0.1","configurations":[{"name":"chart-editor","runtimeExecutable":".venv/bin/python","runtimeArgs":["server.py","8651"],"port":8651}]}

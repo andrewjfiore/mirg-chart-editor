@@ -1,0 +1,15 @@
+work/
+__pycache__/
+.venv/
+# game-derived data stays local: features and models built from the game's charts and audio
+ml/data/
+ml/*.pt
+ml/*.npz
+# built Pages site
+site/
+# reports and logs scored against the game's own charts
+docs/
+ml/eval_*.json
+ml/fun_*.json
+ml/trained_lanes_test.json
+ml/*.txt
