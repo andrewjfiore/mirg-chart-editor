@@ -280,7 +280,7 @@ function editorUi() {
       tip.innerHTML = helper
         ? '<b>Auto-charting is on</b>Click New song and pick an audio file: this computer splits the instruments and places the gems.'
         : '<b>Web version</b>Edit the demo song, start a New song over your own audio, or open a chart file. To have gems placed for you automatically, '
-          + '<a target="_blank" rel="noopener" href="' + REPO + '#download">download the app</a>.';
+          + '<a target="_blank" rel="noopener" href="' + REPO + '#install-adds-auto-charting">download the app</a>.';
       tip.insertAdjacentHTML('beforeend', '<button type="button" aria-label="Close">x</button>');
       tip.querySelector('button').addEventListener('click', () => { tip.remove(); put('tipClosed', true); });
       document.body.appendChild(tip);
