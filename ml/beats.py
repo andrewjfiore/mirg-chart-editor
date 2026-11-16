@@ -2,11 +2,26 @@
 Falls back to a per-beat tempo map when the song's tempo drifts."""
 import numpy as np,torch
 _A=None
+# Beat This! weights (MIT). The authors' server rate-limits downloads, so hash-pinned Hugging Face copies go first.
+_SHA='8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331'
+_URLS=['https://huggingface.co/Audante/beat-this-final0/resolve/main/beat_this-final0.ckpt',
+       'https://huggingface.co/teamup-tech/Beat-This-weights/resolve/main/final0.ckpt',
+       'https://huggingface.co/oulianov/beat_this/resolve/main/final0.ckpt',
+       'https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt']
+def _checkpoint():
+    import os
+    dst=os.path.join(torch.hub.get_dir(),'checkpoints','beat_this-final0.ckpt')   # same file name Beat This caches under
+    if os.path.exists(dst): return dst
+    os.makedirs(os.path.dirname(dst),exist_ok=True); errs=[]
+    for u in _URLS:
+        try: torch.hub.download_url_to_file(u,dst,hash_prefix=_SHA); return dst   # temp file, sha256 check, then rename
+        except Exception as e: errs.append(f'{u}: {e}')
+    raise RuntimeError(f'Could not download the beat model. Download it from {_URLS[0]} and save it as {dst}\n'+'\n'.join(errs))
 def _model():
     global _A
     if _A is None:
         from beat_this.inference import Audio2Beats
-        _A=Audio2Beats(checkpoint_path='final0',device='cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu',dbn=False)
+        _A=Audio2Beats(checkpoint_path=_checkpoint(),device='cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu',dbn=False)
     return _A
 def track(mix,sr,beats_per_bar=4,min_lead_beats=8):
     y=mix.mean(1) if mix.ndim==2 else mix
@@ -56,3 +71,4 @@ def track(mix,sr,beats_per_bar=4,min_lead_beats=8):
             tempos.append([ticks+i*480,int(round((b[i+1]-b[i])*1e6))])
         out['tempos']=tempos
     return out
+if __name__=='__main__': print(_checkpoint())   # fetch the beat model ahead of time
