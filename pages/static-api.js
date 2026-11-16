@@ -182,6 +182,8 @@ async function fileGet(k) {
 }
 // one track named bg_click: both pages play it as background that no chart track owns, so it is always heard
 const mixInfo = () => ({ tracks: [{ name: 'bg_click', channels: [0, 1, 2, 3, 4, 5, 6, 7] }], pans: new Array(8).fill(0), vols: new Array(8).fill(0), sample_rate: 44100 });
+// auto-charted songs: one channel per chart track in order, then background
+const stemInfo = (names) => ({ tracks: names.map((name, i) => ({ name, channels: [i] })), pans: new Array(names.length).fill(0), vols: new Array(names.length).fill(0), sample_rate: 32000 });
 function baseSong(id) {
   if (id === DEMO) return demoSong();
   const s = get('song.' + id, null);
@@ -219,7 +221,8 @@ async function api(path, method, body) {
     if (id === DEMO) return info ? json(demoInfo()) : new Response((await demoWav()).slice(0), { headers: { 'Content-Type': 'audio/wav' } });
     const f = await fileGet('audio.' + id);
     if (!f) return json({ error: 'No audio for this chart. Charts opened from a file have no audio.' }, 404);
-    return info ? json(mixInfo()) : new Response(await f.arrayBuffer(), { headers: { 'Content-Type': f.type || 'application/octet-stream' } });
+    const names = get('song.' + id, {}).audio_tracks;
+    return info ? json(names ? stemInfo(names) : mixInfo()) : new Response(await f.arrayBuffer(), { headers: { 'Content-Type': f.type || 'application/octet-stream' } });
   }
   return json({ error: LOCAL_ONLY }, 501);
 }

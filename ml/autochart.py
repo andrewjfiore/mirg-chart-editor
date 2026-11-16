@@ -91,11 +91,16 @@ def chart_tracks(upload_path,job,progress,kind):
                        'gem_meta':[[0,0x80,0x40,None,None]]*len(gems),'rest':[[0,'meta',3,('T%d CATCH:%s:%s'%(i+1,letter,label)).encode().hex()]],'eot':total_ticks})
     return mix,stems,n,per,tempos,bt,rms,loud,total_ticks,tracks
 def web_chart(upload_path,job,title,artist,progress=lambda stage,frac=None:None,kind='trained'):
-    """Audio file -> chart for the web editor, no game files needed. The beat-aligned audio goes to job/audio.flac."""
+    """Audio file -> chart for the web editor, no game files needed. The beat-aligned audio goes to job/audio.wav:
+    one mono channel per chart track plus a background channel, the same layout as the game songs' play-test audio."""
     os.makedirs(job,exist_ok=True)
     mix,stems,n,per,tempos,bt,rms,loud,total_ticks,tracks=chart_tracks(upload_path,job,progress,kind)
-    progress('Writing audio',0.9); sf.write(os.path.join(job,'audio.flac'),np.clip(mix,-1,1),SR,format='FLAC',subtype='PCM_16')
-    return {'meta':{'title':title,'artist':artist,'bpm':round(60/per,1),'section_start_bars':[],'song_info':[],'enable_order':[1,2,3,4,5,6]},
+    progress('Writing audio',0.9)
+    resid=mix-sum(stems[k] for k,_,_,_ in LAYOUT)   # whatever the stems missed
+    y=np.stack([stems[k].mean(1) for k,_,_,_ in LAYOUT]+[resid.mean(1)],1); y*=min(1.0,0.95/(float(np.abs(y.sum(1)).max()) or 1.0))
+    y=librosa.resample(y.T,orig_sr=SR,target_sr=32000).T
+    sf.write(os.path.join(job,'audio.wav'),y,32000,format='WAV',subtype='PCM_16')
+    return {'audio_tracks':[c for *_,c in LAYOUT]+['background'],'meta':{'title':title,'artist':artist,'bpm':round(60/per,1),'section_start_bars':[],'song_info':[],'enable_order':[1,2,3,4,5,6]},
             'tpq':F.TPQ,'tempos':tempos,'timesig':[[0,4,4]],'world':[],'length_ticks':total_ticks,
             'tracks':[{k:t[k] for k in ('index','name','kind','label','gems')} for t in tracks]}
 def run(upload_path,slot,title,artist,progress=lambda stage,frac=None:None,kind='trained',donor=None):

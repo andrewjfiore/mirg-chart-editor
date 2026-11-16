@@ -278,8 +278,8 @@ class H(BaseHTTPRequestHandler):
                 j=JOBS.get(p.split('/')[-1]); return self._send(200 if j else 404,j or {'error':'unknown job'})
             if p.startswith('/ml/audio/'):
                 jid=p.split('/')[-1]
-                if not re.fullmatch(r'[0-9a-f]{8}',jid) or not os.path.exists(os.path.join(WORK,'webcharts',jid,'audio.flac')): return self._send(404,{'error':'no audio for this job'})
-                return self._send(200,open(os.path.join(WORK,'webcharts',jid,'audio.flac'),'rb').read(),'audio/flac')
+                if not re.fullmatch(r'[0-9a-f]{8}',jid) or not os.path.exists(os.path.join(WORK,'webcharts',jid,'audio.wav')): return self._send(404,{'error':'no audio for this job'})
+                return self._send(200,open(os.path.join(WORK,'webcharts',jid,'audio.wav'),'rb').read(),'audio/wav')
             if not HAVE_GAME and p in('/','/index.html','/play.html','/static-api.js'):
                 import build_pages
                 if p=='/static-api.js': return self._send(200,open(os.path.join(ROOT,'pages','static-api.js'),'rb').read(),'text/javascript; charset=utf-8')
